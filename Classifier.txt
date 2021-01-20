@@ -1,0 +1,178 @@
+﻿library(tm)
+library(ggplot2)
+unpopular.path <- "data/unpopular/"
+unpopular2.path <- "data/unpopular2/"
+popularity.path <- "data/popularity/"
+popularity2.path <- "data/popularity2/"
+
+get.msg <- function(path) {
+con <- file(path, open="rt", encoding="native.enc")
+text <- readLines(con)
+msg <- text[]
+close(con)
+return(paste(msg, collapse="\n"))
+}
+
+unpopular.docs <- dir(unpopular.path)
+unpopular.docs <- unpopular.docs[which(unpopular.docs!="cmds")]
+all.unpopular <- sapply(unpopular.docs, function(p) get.msg(paste(unpopular.path,p,sep="")))
+
+get.tdm <- function(doc.vec) {
+doc.corpus <- Corpus(VectorSource(doc.vec))
+control <- list(stopwords=TRUE, removePunctuation=TRUE, removeNumbers=TRUE, minDocFreq=2)
+doc.corpus <- tm_map(doc.corpus, function(x) iconv(x, to='UTF-8', sub='byte'))
+doc.dtm <- TermDocumentMatrix(doc.corpus, control)
+return(doc.dtm)
+}
+unpopular.tdm <- get.tdm(all.unpopular)
+
+unpopular.matrix <- as.matrix(unpopular.tdm)
+unpopular.counts <- rowSums(unpopular.matrix)
+unpopular.df <- data.frame(cbind(names(unpopular.counts),as.numeric(unpopular.counts)), stringsAsFactors=FALSE)
+names(unpopular.df) <- c("term","frequency")
+unpopular.df$frequency <- as.numeric(unpopular.df$frequency)
+unpopular.occurrence <- sapply(1:nrow(unpopular.matrix),function(i) {length(which(unpopular.matrix[i,] > 0))/ncol(unpopular.matrix)})
+unpopular.density <- unpopular.df$frequency/sum(unpopular.df$frequency)
+unpopular.df <- transform(unpopular.df, density=unpopular.density,occurrence=unpopular.occurrence)
+
+head(unpopular.df[with(unpopular.df, order(-occurrence)),])
+
+popularity.docs <- dir(popularity.path)
+popularity.docs <- popularity.docs[which(popularity.docs != "cmds")]
+all.popularity <- sapply(popularity.docs[1:length(unpopular.docs)],function(p) get.msg(file.path(popularity.path, p)))
+popularity.tdm <- get.tdm(all.popularity)
+popularity.matrix <- as.matrix(popularity.tdm)
+popularity.counts <- rowSums(popularity.matrix)
+popularity.df <- data.frame(cbind(names(popularity.counts),as.numeric(popularity.counts)),stringsAsFactors = FALSE)
+names(popularity.df) <- c("term", "frequency")
+popularity.df$frequency <- as.numeric(popularity.df$frequency)
+popularity.occurrence <- sapply(1:nrow(popularity.matrix),function(i){length(which(popularity.matrix[i,]>0))/ncol(popularity.matrix)})
+popularity.density <- popularity.df$frequency / sum(popularity.df$frequency)
+popularity.df <- transform(popularity.df,density = popularity.density,occurrence = popularity.occurrence)
+head(popularity.df[with(popularity.df, order(-occurrence)),]) 
+
+classify.email <- function(path, training.df, prior=0.5, c=1e-6) { #training.df==unpopular.df, popularity.df …
+ msg <- get.msg(path)
+msg.tdm <- get.tdm(msg)
+msg.freq <- rowSums(as.matrix(msg.tdm))
+
+msg.match <- intersect(names(msg.freq), training.df$term)
+if(length(msg.match) < 1) {
+return(prior*c^(length(msg.freq)))
+}
+else {
+
+match.probs <- training.df$occurrence[match(msg.match, training.df$term)]
+return(prior * prod(match.probs) * c^(length(msg.freq)-length(msg.match)))
+}
+}
+unpopular.classifier <- function(path)
+{
+  pr.unpopular <- classify.email(path, unpopular.df)
+  pr.popularity <- classify.email(path, popularity.df)
+  return(c(pr.unpopular, pr.popularity, ifelse(pr.unpopular > pr.popularity, 1, 0)))
+}
+
+# Get lists of all the email messages
+popularity.docs <- dir(popularity.path)
+popularity.docs <- popularity.docs[which(popularity.docs != "cmds")]
+
+unpopular.docs <- dir(unpopular.path)
+unpopular.docs <- unpopular.docs[which(unpopular.docs != "cmds")]
+
+# Classify them all!
+popularity.class <- suppressWarnings(lapply(popularity.docs,
+                                   function(p)
+                                   {
+                                     unpopular.classifier(file.path(popularity.path, p))
+                                   }))
+unpopular.class <- suppressWarnings(lapply(unpopular.docs,
+                                function(p)
+                                {
+                                  unpopular.classifier(file.path(unpopular.path, p))
+                                }))
+
+# Create a single, final, data frame with all of the classification data in it
+popularity.matrix <- do.call(rbind, popularity.class)
+popularity.final <- cbind(popularity.matrix, "popularity")
+
+unpopular.matrix <- do.call(rbind, unpopular.class)
+unpopular.final <- cbind(unpopular.matrix, "unpopular")
+
+class.matrix <- rbind(popularity.final, unpopular.final)
+class.df <- data.frame(class.matrix, stringsAsFactors = FALSE)
+names(class.df) <- c("Pr.unpopular" ,"Pr.popularity", "Class", "Type")
+class.df$Pr.unpopular <- as.numeric(class.df$Pr.unpopular)
+class.df$Pr.popularity <- as.numeric(class.df$Pr.popularity)
+class.df$Class <- as.logical(as.numeric(class.df$Class))
+class.df$Type <- as.factor(class.df$Type)
+
+
+
+get.results <- function(bool.vector)
+{
+  results <- c(length(bool.vector[which(bool.vector == FALSE)]) / length(bool.vector),
+               length(bool.vector[which(bool.vector == TRUE)]) / length(bool.vector))
+  return(results)
+}
+
+# Save results as a 2x3 table
+popularity.col <- get.results(subset(class.df, Type == "popularity")$Class)
+unpopular.col <- get.results(subset(class.df, Type == "unpopular")$Class)
+
+class.res <- rbind(popularity.col, unpopular.col)
+colnames(class.res) <- c("NOT unpopular", "unpopular")
+print(class.res)
+
+
+
+# Get lists of all the email messages
+popularity2.docs <- dir(popularity2.path)
+popularity2.docs <- popularity2.docs[which(popularity2.docs != "cmds")]
+
+unpopular2.docs <- dir(unpopular2.path)
+unpopular2.docs <- unpopular2.docs[which(unpopular2.docs != "cmds")]
+
+# Classify them all!
+popularity2.class <- suppressWarnings(lapply(popularity2.docs,
+                                   function(p)
+                                   {
+                                     unpopular.classifier(file.path(popularity2.path, p))
+                                   }))
+unpopular2.class <- suppressWarnings(lapply(unpopular2.docs,
+                                function(p)
+                                {
+                                  unpopular.classifier(file.path(unpopular2.path, p))
+                                }))
+
+# Create a single, final, data frame with all of the classification data in it
+popularity2.matrix <- do.call(rbind, popularity2.class)
+popularity2.final <- cbind(popularity2.matrix, "popularity2")
+
+unpopular2.matrix <- do.call(rbind, unpopular2.class)
+unpopular2.final <- cbind(unpopular2.matrix, "unpopular2")
+
+class.matrix <- rbind(popularity2.final, unpopular2.final)
+class.df <- data.frame(class.matrix, stringsAsFactors = FALSE)
+names(class.df) <- c("Pr.unpopular2" ,"Pr.popularity2", "Class", "Type")
+class.df$Pr.unpopular2 <- as.numeric(class.df$Pr.unpopular2)
+class.df$Pr.popularity2 <- as.numeric(class.df$Pr.popularity2)
+class.df$Class <- as.logical(as.numeric(class.df$Class))
+class.df$Type <- as.factor(class.df$Type)
+
+
+
+get.results <- function(bool.vector)
+{
+  results <- c(length(bool.vector[which(bool.vector == FALSE)]) / length(bool.vector),
+               length(bool.vector[which(bool.vector == TRUE)]) / length(bool.vector))
+  return(results)
+}
+
+# Save results as a 2x3 table
+popularity2.col <- get.results(subset(class.df, Type == "popularity2")$Class)
+unpopular2.col <- get.results(subset(class.df, Type == "unpopular2")$Class)
+
+class.res <- rbind(popularity2.col, unpopular2.col)
+colnames(class.res) <- c("NOT unpopular2", "unpopular2")
+print(class.res)
