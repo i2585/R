@@ -1,0 +1,45 @@
+
+getwd()
+
+data <- read.csv("data.csv")
+ex.matrix <- data.matrix(data[,-1])
+row.names(ex.matrix) <- c('MyungJin','DongHo','DongHyun','SeungJin','Woomin','Minho','ByungHyun','SuMin','HaeYoon')
+ex.matrix
+
+ex.mult <- ex.matrix %*% t(ex.matrix)
+ex.mult
+
+dist.data <- dist(ex.mult)
+dist.data
+
+dist.data.mds <- cmdscale(dist.data)
+plot(dist.data.mds, type='n')
+text(dist.data.mds, c('MyungJin','DongHo','DongHyun','SeungJin','Woomin','Minho','ByungHyun','SuMin','HaeYoon'))
+
+
+t.matrix <- t(ex.matrix)
+t.matrix
+
+t.mult <- t.matrix %*% t(t.matrix)
+t.mult
+
+dist.tdata <- dist(t.mult)
+dist.tdata
+
+dist.tdata.mds <- cmdscale(dist.tdata)
+plot(dist.tdata.mds, type='n')
+text(dist.tdata.mds, c('App','Web','Network','Server','Bigdata','Game','AI'))
+
+dist.data <- dist(ex.matrix)
+dist.data
+
+dist.data.mds <- cmdscale(dist.data)
+plot(dist.data.mds, type='n')
+text(dist.data.mds, c('MyungJin','DongHo','DongHyun','SeungJin','Woomin','Minho','ByungHyun','SuMin','HaeYoon'))
+
+dist.tdata <- dist(t.matrix)
+dist.tdata
+
+dist.tdata.mds <- cmdscale(dist.tdata)
+plot(dist.tdata.mds, type='n')
+text(dist.tdata.mds, c('App','Web','Network','Server','Bigdata','Game','AI'))
